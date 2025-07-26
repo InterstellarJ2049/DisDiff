@@ -72,14 +72,18 @@ def compute_factor_vae(ground_truth_data,
     return scores_dict
 
   logging.info("Generating training set.")
+  # shape: (num_factors, dim_representation), value: votes.
   training_votes = _generate_training_batch(ground_truth_data,
                                             representation_function, batch_size,
                                             num_train, random_state,
                                             global_variances, active_dims)
-  classifier = np.argmax(training_votes, axis=0)
-  other_index = np.arange(training_votes.shape[1])
+  # shape: (1, dim_representation), value: the most frequent factor index for each dimension.
+  classifier = np.argmax(training_votes, axis=0) # Index of the most frequent factor for each representation coordinate.
+  # shape: (1, dim_representation), value: the index of all representation coordinates.
+  other_index = np.arange(training_votes.shape[1]) # Index of all representation coordinates.
 
   logging.info("Evaluate training set accuracy.")
+  # adds up the "winning" factor votes for each representation coordinate / sum total votes
   train_accuracy = np.sum(
       training_votes[classifier, other_index]) * 1. / np.sum(training_votes)
   logging.info("Training set accuracy: %.2g", train_accuracy)
@@ -102,7 +106,7 @@ def compute_factor_vae(ground_truth_data,
 
 @gin.configurable("prune_dims", blacklist=["variances"])
 def _prune_dims(variances, threshold=0.):
-  """Mask for dimensions collapsed to the prior."""
+  """Mask for dimensions collapsed to the prior. Returns a boolean mask."""
   scale_z = np.sqrt(variances)
   return scale_z >= threshold
 
@@ -115,7 +119,9 @@ def _compute_variances(ground_truth_data,
   """Computes the variance for each dimension of the representation.
 
   Args:
-    ground_truth_data: GroundTruthData to be sampled from.
+    ground_truth_data: GroundTruthData to be sampled from. But here will apply
+      the random_state to sample the complete random observations without any
+      fixed factors.
     representation_function: Function that takes observation as input and
       outputs a representation.
     batch_size: Number of points to be used to compute the variances.
@@ -141,6 +147,7 @@ def _generate_training_sample(ground_truth_data, representation_function,
 
   Args:
     ground_truth_data: GroundTruthData to be sampled from.
+      .num_factors: an integer -> Number of factors in the ground truth data.
     representation_function: Function that takes observation as input and
       outputs a representation.
     batch_size: Number of points to be used to compute the training_sample.
@@ -155,11 +162,13 @@ def _generate_training_sample(ground_truth_data, representation_function,
   """
   # Select random coordinate to keep fixed.
   factor_index = random_state.randint(ground_truth_data.num_factors)
-  # Sample two mini batches of latent variables.
+  # Sample two mini batches of latent variables. 
+  # TODO: why two? 
+  # TODO: Is the factor a data or latent rep or otherwise? None, more like a label info.
   factors = ground_truth_data.sample_factors(batch_size, random_state)
   # Fix the selected factor across mini-batch.
   factors[:, factor_index] = factors[0, factor_index]
-  # Obtain the observations.
+  # Obtain the observations. Screen the data with the fixed factor and other random factors.
   observations = ground_truth_data.sample_observations_from_factors(
       factors, random_state)
   representations = representation_function(observations)
